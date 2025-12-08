@@ -16,6 +16,15 @@ public class Dummy_Damage : MonoBehaviour
     [SerializeField] private string lightDamageTrigger = "LightDamage";
     [SerializeField] private string heavyDamageTrigger = "HeavyDamage";
 
+    [Header("사운드 파일 연결")]
+    private AudioSource audioSource;
+    public AudioClip hitSound; 
+    public AudioClip dieSound;
+
+    void Start()
+    {
+        audioSource = GetComponent<AudioSource>();
+    }
 
     void OnCollisionEnter(Collision collision)
     {
@@ -24,12 +33,13 @@ public class Dummy_Damage : MonoBehaviour
         if (impactSpeed >= heavyDamageThreshold)
         {
             PlayHeavyDamageAnimation();
+            audioSource.PlayOneShot(dieSound);
             StartCoroutine(DieAndRevive());
         }
         else if (impactSpeed >= lightDamageThreshold)
         {
             PlayLightDamageAnimation();
-            
+            audioSource.PlayOneShot(hitSound);
         }
     }
 
