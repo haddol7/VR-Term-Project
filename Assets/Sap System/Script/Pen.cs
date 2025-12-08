@@ -21,10 +21,16 @@ public class Pen : MonoBehaviour
     private int currentColorIndex;
     private bool drawActive = false;
 
+    [Header("사운드 파일 연결")]
+    private AudioSource audioSource;
+    public AudioClip dipSound;
+    public AudioClip brushSound; 
+
     private void Start()
     {
         lastTipPosition = tip.position;
         lastSpawnTime = 0f;
+        audioSource = GetComponent<AudioSource>();
 
         XRGrabInteractable grabInteractable = GetComponent<XRGrabInteractable>();
         if (grabInteractable != null)
@@ -37,6 +43,7 @@ public class Pen : MonoBehaviour
     private void Update()
     {
         if (drawActive) Draw();
+        //Debug.DrawRay(tip.position, tip.forward * 0.05f, Color.red, 2.0f);
     }
 
     private void ActiveDraw()
@@ -63,7 +70,7 @@ public class Pen : MonoBehaviour
         Vector3 direction = currentPosition - lastTipPosition;
         float distance = direction.magnitude;
 
-        if (Physics.Raycast(currentPosition, tip.forward, out RaycastHit hit, 0.1f, ~0, QueryTriggerInteraction.Ignore))
+        if (Physics.Raycast(currentPosition, tip.forward * 0.05f, out RaycastHit hit, 0.1f, ~0, QueryTriggerInteraction.Ignore))
         {
             SpawnSap(hit);
             sapAmount -= 0.5f;
@@ -98,13 +105,14 @@ public class Pen : MonoBehaviour
         GameObject newSap = Instantiate(sapPrefab, spawnPosition, finalRotation);
 
         newSap.transform.SetParent(hit.transform, true);
+
+        audioSource.PlayOneShot(brushSound);
     }
 
-    private void OnTriggerStay(Collider other)
+    private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Paint"))
         {
-
             if (sapAmount == 0.0f)
             {
                 sapViewer.SetActive(true);
@@ -115,6 +123,7 @@ public class Pen : MonoBehaviour
                 Vector3 tempScale = sapViewer.transform.localScale;
                 tempScale.z += 0.03f;
                 sapViewer.transform.localScale = tempScale;
+                audioSource.PlayOneShot(dipSound);
             }
         }
     }
