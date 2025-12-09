@@ -26,7 +26,7 @@ public class Dummy_Damage : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
     }
 
-    void OnCollisionEnter(Collision collision)
+    /*void OnCollisionEnter(Collision collision)
     {
         float impactSpeed = collision.relativeVelocity.magnitude;
 
@@ -40,6 +40,30 @@ public class Dummy_Damage : MonoBehaviour
         {
             PlayLightDamageAnimation();
             audioSource.PlayOneShot(hitSound);
+        }
+    }*/
+
+    void OnCollisionEnter(Collision collision)
+    {
+        // 1. 태그 확인: "Stickable" (새 무기) 혹은 "BreakingStone" (그냥 돌) 일 때만 반응
+        if (collision.gameObject.CompareTag("Stickable") || collision.gameObject.CompareTag("BreakingStone"))
+        {
+            float impactSpeed = collision.relativeVelocity.magnitude;
+
+            // 디버그용: 충돌한 물체 이름과 속도를 콘솔에 찍어봄 (테스트할 때 도움됨)
+            Debug.Log($"충돌 감지! 대상: {collision.gameObject.name} / 태그: {collision.gameObject.tag} / 속도: {impactSpeed}");
+
+            if (impactSpeed >= heavyDamageThreshold)
+            {
+                PlayHeavyDamageAnimation();
+                if (dieSound != null) audioSource.PlayOneShot(dieSound); // 오디오 없으면 에러나니까 체크
+                StartCoroutine(DieAndRevive());
+            }
+            else if (impactSpeed >= lightDamageThreshold)
+            {
+                PlayLightDamageAnimation();
+                if (hitSound != null) audioSource.PlayOneShot(hitSound);
+            }
         }
     }
 
