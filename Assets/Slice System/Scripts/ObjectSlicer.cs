@@ -4,23 +4,29 @@ using System.Collections.Generic;
 using UnityEngine;
 using EzySlice;
 
-
 public class ObjectSlicer : MonoBehaviour
 {
     public float slicedObjectInitialVelocity = 100;
     public Material slicedMaterial;
     public Transform startSlicingPoint;
     public Transform endSlicingPoint;
-    public LayerMask sliceableLayer;
+    public LayerMask sliceableLayer;          // 자를 레이어 (예: Sliceable)
     public VelocityEstimator velocityEstimator;
 
-    // 0번: 원래 과일
-    // 1번: 한번 잘린 조각
-    // => maxSliceCount = 2 이면 "한 번 더" 까지만 허용
+    // 0번: 원본, 1번: 한 번 잘린 조각 …
     public int maxSliceCount = 2;
+
+    // 🔥 너무 잘 잘리는 거 막기용 (쿨타임)
+    public float sliceCooldown = 0.15f;       // 한 번 자르고 나서 쉬는 시간(초)
+    private bool canSlice = true;             // 지금 슬라이스 가능 여부
 
     void Update()
     {
+        // 쿨타임 중이면 이번 프레임은 슬라이스 안 함
+        if (!canSlice)
+            return;
+
+        // 시작~끝 사이 방향/거리 계산
         Vector3 slicingDirection = endSlicingPoint.position - startSlicingPoint.position;
         float distance = slicingDirection.magnitude;
         if (distance <= 0.001f)
@@ -34,27 +40,37 @@ public class ObjectSlicer : MonoBehaviour
             slicingDirection,
             out hit,
             distance,
-            ~0,
+            sliceableLayer,                    // ★ 이 레이어 마스크에 포함된 것만 맞음
             QueryTriggerInteraction.Ignore
         );
 
+        // 디버그 레이 (Scene 뷰에서만 보임)
         Color debugColor = hasHit ? Color.green : Color.red;
-
-        // 파라미터: (시작위치, 방향 * 길이, 색상, 지속시간)
-        Debug.DrawRay(startSlicingPoint.position, slicingDirection * (distance + 10), debugColor, 2.0f);
+        Debug.DrawRay(startSlicingPoint.position, slicingDirection * distance, debugColor, 0.1f);
 
         if (hasHit)
         {
-            
-            if (hit.transform.gameObject.layer == 9) // Bomb
+            GameObject hitObj = hit.transform.gameObject;
+
+            // 레이어 9 = Bomb 이면 바로 씬 리셋
+            if (hitObj.layer == 9)
             {
                 UnityEngine.SceneManagement.SceneManager.LoadScene(0);
+                return;
             }
+
+            // 속도 추정 (VelocityEstimator null이어도 안전하게)
+            Vector3 sliceVelocity;
+            if (velocityEstimator != null)
+                sliceVelocity = velocityEstimator.GetVelocityEstimate();
             else
-            {
-                Slice(hit.transform.gameObject, hit.point, velocityEstimator.GetVelocityEstimate());
-            }
-            Debug.Log("Test for slice");
+                sliceVelocity = (endSlicingPoint.position - startSlicingPoint.position) /
+                                Mathf.Max(Time.deltaTime, 0.0001f);
+
+            Slice(hitObj, hit.point, sliceVelocity);
+            StartCoroutine(SliceCooldown());          // 🔥 한 번 자르고 쿨타임 시작
+
+            Debug.Log("Test for slice : " + hitObj.name);
         }
     }
 
@@ -68,11 +84,22 @@ public class ObjectSlicer : MonoBehaviour
             meta.sliceCount = 0;
         }
 
+        // 더 이상 자르고 싶으면 이 if 지우거나 maxSliceCount 크게 올리기
+        if (maxSliceCount >= 0 && meta.sliceCount >= maxSliceCount)
+        {
+            Debug.Log("Max slice reached for " + target.name);
+            return;
+        }
 
-        Debug.Log("WE SLICE THE OBJECT");
+        Debug.Log("WE SLICE THE OBJECT : " + target.name);
 
         Vector3 slicingDirection = endSlicingPoint.position - startSlicingPoint.position;
         Vector3 planeNormal = Vector3.Cross(slicerVelocity, slicingDirection);
+
+        if (planeNormal == Vector3.zero)
+        {
+            planeNormal = Vector3.Cross(slicingDirection, Vector3.up);
+        }
 
         SlicedHull hull = target.Slice(planePosition, planeNormal, slicedMaterial);
 
@@ -83,60 +110,69 @@ public class ObjectSlicer : MonoBehaviour
             GameObject upperHull = hull.CreateUpperHull(target, slicedMaterial);
             GameObject lowerHull = hull.CreateLowerHull(target, slicedMaterial);
 
-            // 이번에 한 번 잘렸으니까 +1
-            meta.sliceCount++;
+            int newCount = meta.sliceCount + 1;
 
-            // 조각에도 정보/레이어/태그 복사
-            CreateSlicedComponent(upperHull, target, meta.sliceCount);
-            CreateSlicedComponent(lowerHull, target, meta.sliceCount);
+            CreateSlicedComponent(upperHull, original: target, sliceCount: newCount);
+            CreateSlicedComponent(lowerHull, original: target, sliceCount: newCount);
 
             Destroy(target);
+        }
+        else
+        {
+            Debug.LogWarning("Hull is null, mesh might not be readable : " + target.name);
         }
     }
 
     void CreateSlicedComponent(GameObject slicedHull, GameObject original, int sliceCount)
     {
-        // 레이어/태그는 원본 그대로 (다시 잘릴 수 있게)
+        // 위치/회전/스케일 복사
+        slicedHull.transform.position = original.transform.position;
+        slicedHull.transform.rotation = original.transform.rotation;
+        slicedHull.transform.localScale = original.transform.localScale;
+
+        // 레이어/태그 복사 (계속 Sliceable 유지)
         slicedHull.layer = original.layer;
         slicedHull.tag = original.tag;
 
-        // 몇 번 잘렸는지 정보 복사
+        // 잘린 횟수 정보 붙이기
         SliceMeta meta = slicedHull.AddComponent<SliceMeta>();
         meta.sliceCount = sliceCount;
 
-        // 물리 세팅
+        // Rigidbody
         Rigidbody rb = slicedHull.AddComponent<Rigidbody>();
         rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
 
+        // 콜라이더 – EzySlice용 MeshCollider
         MeshCollider collider = slicedHull.AddComponent<MeshCollider>();
-        collider.convex = true;          // 동적 MeshCollider 필수
+        collider.convex = true;
 
-        // 🔥 XR Grab Interactable 추가 (조각을 손으로 잡기 위함)
+        // XR로 잡을 수 있게
         XRGrabInteractable grab = slicedHull.AddComponent<XRGrabInteractable>();
 
-        // XR Interaction Manager 직접 연결 (버전에 따라 자동 연결이 안 될 수 있음)
         XRInteractionManager manager = FindObjectOfType<XRInteractionManager>();
         if (manager != null)
         {
             grab.interactionManager = manager;
         }
 
-        // 자연스럽게 손을 따라오게
         grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
         grab.throwOnDetach = true;
         grab.trackPosition = true;
         grab.trackRotation = true;
 
-        // (Interaction Layer는 일단 기본값 그대로 사용)
-
-        // 약간 튕겨나가게 힘 주기
+        // 약간 튕겨 나가게
         rb.AddExplosionForce(
             slicedObjectInitialVelocity,
             slicedHull.transform.position,
             1f
         );
-
     }
 
+    IEnumerator SliceCooldown()
+    {
+        canSlice = false;
+        yield return new WaitForSeconds(sliceCooldown);
+        canSlice = true;
+    }
 }
