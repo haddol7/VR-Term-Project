@@ -4,4 +4,6 @@ using UnityEngine;
 public class SliceMeta : MonoBehaviour
 {
     public int sliceCount = 0;
+
+    public float lastSliceTime = 0f;
 }

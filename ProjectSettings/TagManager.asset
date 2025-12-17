@@ -9,6 +9,7 @@ TagManager:
   - StickyZone
   - Brush
   - Paint
+  - BreakingStone
   layers:
   - Default
   - TransparentFX
@@ -16,7 +17,7 @@ TagManager:
   - 
   - Water
   - UI
-  - 
+  - Sliceable
   - 
   - 
   - 
